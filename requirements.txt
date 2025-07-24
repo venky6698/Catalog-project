@@ -1,5 +1,8 @@
 Flask
 pdf2image
 pytesseract
-Pillow
 anthropic
+flask
+flask-cors
+requests
+PyMuPDF
