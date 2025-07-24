@@ -1,4 +1,3 @@
-# === app.py ===
 import io
 import os
 import uuid
@@ -8,8 +7,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from PIL import Image
-import requests
-import fitz  # PyMuPDF for reading PDF pages as images
+from pdf2image import convert_from_path
 import anthropic
 
 UPLOAD_FOLDER = 'static/uploads'
@@ -23,10 +21,17 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def call_claude_vision(image_b64, input_prompt):
+def call_claude_vision(image_path, input_prompt):
     api_key = "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"
     if api_key and anthropic:
         client = anthropic.Anthropic(api_key=api_key)
+        with open(image_path, 'rb') as f:
+            img = Image.open(image_path).convert("RGB")
+            img.thumbnail((2000, 2000))
+            buffer = io.BytesIO()
+            img.save(buffer, format="JPEG", quality=85)
+            compressed_bytes = buffer.getvalue()
+            image_b64 = base64.b64encode(compressed_bytes).decode("utf-8")
 
         stream = client.messages.create(
             model="claude-opus-4-20250514",
@@ -71,52 +76,25 @@ def call_claude_vision(image_b64, input_prompt):
                 if hasattr(chunk.delta, "text"):
                     collected += chunk.delta.text
 
-        # === DEBUG LOG OUTPUT ===
-        print("\n=== Claude Raw Output ===\n", collected, "\n=========================\n")
+        try:
+            start = collected.find("```json")
+            end = collected.find("```", start + 1)
+            if start != -1 and end != -1:
+                json_str = collected[start + 7:end].strip()
+                return json.loads(json_str)
+        except Exception as e:
+            print("Claude JSON parse error:", e)
 
-        # Attempt 1: Look for ```json ... ``` block
-        #start = collected.find("```json")
-        #end = collected.find("```", start + 7)
-        #if start != -1 and end != -1:
-        #    json_str = collected[start + 7:end].strip()
-        #else:
-            # Fallback: try parsing entire output as JSON
-        #json_str = collected.strip()
+    return []
 
-        #try:
-        #    return json.loads(json_str)
-        #except Exception as e:
-        #    print("❌ Claude JSON parse error:", e)
-        #    return [{"error": "Failed to parse model output", "raw": collected}]
-    return collected
-    return ""
-    
-
-def process_pdf(file_path, input_prompt):
-    doc = fitz.open(file_path)
-    all_text = ""
-    for page_num in range(len(doc)):
-        page = doc.load_page(page_num)
-        pix = page.get_pixmap(dpi=200)
-        image_data = pix.tobytes()
-        img = Image.open(io.BytesIO(image_data)).convert("RGB")
-        img.thumbnail((2000, 2000))
-        buffer = io.BytesIO()
-        img.save(buffer, format="JPEG", quality=85)
-        compressed_bytes = buffer.getvalue()
-        image_b64 = base64.b64encode(compressed_bytes).decode("utf-8")
-        result = call_claude_vision(image_b64, input_prompt)
-        all_text += f"\n--- Page {page_num + 1} ---\n{result}"
-    return all_text
 def process_image(image_path, input_prompt):
-    with open(image_path, 'rb') as f:
-        img = Image.open(image_path).convert("RGB")
-        img.thumbnail((2000, 2000))
-        buffer = io.BytesIO()
-        img.save(buffer, format="JPEG", quality=85)
-        compressed_bytes = buffer.getvalue()
-        image_b64 = base64.b64encode(compressed_bytes).decode("utf-8")
-        return call_claude_vision(image_b64, input_prompt)
+    results = call_claude_vision(image_path, input_prompt)
+    if isinstance(results, str):
+        try:
+            results = json.loads(results)
+        except:
+            results = []
+    return results
 
 @app.route('/upload', methods=['POST'])
 def upload():
@@ -128,14 +106,20 @@ def upload():
 
     ext = file.filename.rsplit('.', 1)[1].lower()
     uid = str(uuid.uuid4())
-    save_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{uid}.{ext}")
-    file.save(save_path)
 
     if ext == 'pdf':
-        ocr_result = process_pdf(save_path, input_prompt)
+        pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], uid + '.pdf')
+        file.save(pdf_path)
+        pages = convert_from_path(pdf_path, dpi=300, first_page=1, last_page=1)
+        if not pages:
+            return jsonify({"error": "PDF has no pages"}), 400
+        img_path = os.path.join(app.config['UPLOAD_FOLDER'], uid + '.png')
+        pages[0].save(img_path, 'PNG')
     else:
-        ocr_result = process_image(save_path, input_prompt)
+        img_path = os.path.join(app.config['UPLOAD_FOLDER'], uid + '.' + ext)
+        file.save(img_path)
 
+    ocr_result = process_image(img_path, input_prompt)
     return jsonify({"results": ocr_result})
 
 if __name__ == '__main__':
