@@ -20,6 +20,12 @@ pip install -r requirements.txt
 ## Running
 ```bash
 python app.py
+## 1. Navigate to frontend folder
+cd react_frontend
+npx create-react-app . --template cra-template
+npm install
+npm start
+This should open http://localhost:5173
 ```
 
 Then open `http://localhost:5000` in your browser.
