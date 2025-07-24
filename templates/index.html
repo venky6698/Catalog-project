@@ -3,56 +3,12 @@
 <head>
     <meta charset="utf-8">
     <title>Catalog OCR Extractor</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        #preview-container { position: relative; display: inline-block; }
-        #preview { max-width: 100%; border: 1px solid #ccc; }
-        .box {
-            position: absolute;
-            border: 2px solid red;
-            pointer-events: none;
-        }
-    </style>
 </head>
 <body>
-    <h1>Catalog Spread OCR Extractor</h1>
-    <form id="upload-form" method="post" enctype="multipart/form-data" action="/upload">
-        <input type="file" name="file" id="file-input" accept="image/*,.pdf" required>
+    <h1>Upload Catalog Page</h1>
+    <form method="post" enctype="multipart/form-data" action="/upload">
+        <input type="file" name="file" accept="image/*,.pdf" required>
         <button type="submit">Upload</button>
     </form>
-    <div id="preview-container">
-        <img id="preview" src="" alt="preview"/>
-    </div>
-    <script>
-        const fileInput = document.getElementById('file-input');
-        const preview = document.getElementById('preview');
-        fileInput.addEventListener('change', function(e){
-            const file = e.target.files[0];
-            if(!file) return;
-            const reader = new FileReader();
-            reader.onload = e => { preview.src = e.target.result; };
-            reader.readAsDataURL(file);
-        });
-    </script>
-    {% if boxes %}
-    <script>
-        const boxes = {{ boxes|tojson }};
-        const img = document.getElementById('preview');
-        const container = document.getElementById('preview-container');
-        img.onload = () => {
-            boxes.forEach(b => {
-                const div = document.createElement('div');
-                div.className = 'box';
-                div.style.left = b.x + 'px';
-                div.style.top = b.y + 'px';
-                div.style.width = b.width + 'px';
-                div.style.height = b.height + 'px';
-                div.title = b.text;
-                container.appendChild(div);
-            });
-        };
-        img.src = '{{ image_url }}';
-    </script>
-    {% endif %}
 </body>
 </html>
